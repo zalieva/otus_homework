@@ -10,120 +10,93 @@
 # замена аномалий;
 # различные варианты шкалирования непрерывных переменных (StandardScaler, RobustScaler, и.т.д.);
 # обратите внимание на распределение целевой переменной, возможно, с ней тоже можно поработать;
-# Попробуйте на основании имеющихся переменных создать новые, которые могли бы улучшить качество модели. Например, можно найти координаты Манхэттена (самого дорогого района) и при помощи широты и долготы, а также евклидового расстояния создать новую переменную - расстояние от квартиры до этого района. Возможно, такой признак будет работать лучше, чем просто широта и долгота.
+# Попробуйте на основании имеющихся переменных создать новые, которые могли бы улучшить качество модели.
+# Например, можно найти координаты Манхэттена (самого дорогого района) и при помощи широты и долготы,
+# а также евклидового расстояния создать новую переменную - расстояние от квартиры до этого района.
+# Возможно, такой признак будет работать лучше, чем просто широта и долгота.
 # Часть 3. Моделирование
 
-# импортируем библиотеки
+
 import numpy as np
 import pandas as pd
 import matplotlib.pyplot as plt
 import seaborn as sns
-from sklearn.model_selection import cross_val_score
+from sklearn.model_selection import train_test_split, cross_val_score
 from sklearn.neighbors import KNeighborsClassifier
-from sklearn.ensemble import RandomForestClassifier
+from sklearn.preprocessing import LabelEncoder
 from sklearn.preprocessing import StandardScaler
+from sklearn.metrics import roc_auc_score, accuracy_score, precision_score, recall_score, f1_score
+from sklearn.ensemble import RandomForestClassifier
 from sklearn.linear_model import LogisticRegression
+from sklearn.preprocessing import OrdinalEncoder
+import warnings
 
-# подгружаем данные
-data = pd.read_csv('dataset/AB_NYC_2019.csv')
+warnings.filterwarnings("ignore")
+# %matplotlib inline
+sns.set_style('darkgrid')
+
+dataset = pd.read_csv('dataset/AB_NYC_2019.csv')
 
 # - Выкиньте ненужные признаки: id, name, host_id, host_name, last_review
-data = data.drop(columns=['id', 'name', 'host_id', 'host_name', 'last_review'])
-
+dataset = dataset.drop(columns=['id', 'name', 'host_id', 'host_name', 'last_review', 'neighbourhood'])
+# print(dataset.info())
 # Часть 1. EDA
 # - Визуализируйте базовые статистики данных: распределения признаков, матрицу попарных корреляций, постройте pair plots
 
-# # Визуализация распределений признаков
-
-cols = len(data.columns)
-data.hist(layout=(cols, 3), figsize=(20, 2.5*cols))
-plt.show()
-
-plt.figure(figsize=(10,6))
-sns.histplot(data=data, x='price', y='neighbourhood_group', hue='neighbourhood_group')
-plt.show()
-plt.figure(figsize=(10,6))
-sns.boxplot(data=data, x='price', y='room_type', hue='room_type')
-# plt.show()
-
-# plt.figure(figsize=(8, 4))
-# sns.histplot(data['price'], kde=True, color='skyblue')
-# plt.title('Distribution of Prices')
-# plt.xlabel('price')
-# plt.ylabel('Frequency')
-# plt.show()
-#
-# plt.figure(figsize=(8, 4))
-# sns.histplot(data['number_of_reviews'], kde=True, color='salmon')
-# plt.title('Distribution of Number of Reviews')
-# plt.xlabel('Number of Reviews')
-# plt.ylabel('Frequency')
+# len_columns = len(dataset.select_dtypes('number').columns)
+# for i in range(len_columns):
+#     sns.displot(x=dataset[dataset.select_dtypes('number').columns[i]], kind="kde")
 # # plt.show()
 #
-# Матрица попарных корреляций
-
-
-correlation_matrix = data[['price', 'number_of_reviews', 'reviews_per_month']].corr()
-plt.figure(figsize=(8, 4))
-sns.heatmap(correlation_matrix, annot=True, cmap='coolwarm', vmin=-1, vmax=1)
-plt.title('Pairwise Correlation Matrix')
-plt.show()
-
-#
-# plt.subplots(figsize=(18,15))
-# sns.heatmap(data.corr(), cmap=sns.color_palette("coolwarm", 10000), vmin=-1, center=0)
-# plt.show()
-
-
-# cm = np.corrcoef(data[cols].values.T)
-# plt.figure(figsize=(10,7))
-# sns.set(font_scale=1.25)
-# sns.heatmap(cm, cbar=True, annot=True, square=True, fmt='.2f', annot_kws={'size': 12},\
-#                 yticklabels=cols, xticklabels=cols, vmin=-1, center=0,\
-#                     cmap=sns.color_palette('coolwarm',1000))
-# plt.show()
-
-# # Pair plots
-# sns.pairplot(data[['price', 'number_of_reviews', 'reviews_per_month']])
+# corr = dataset.select_dtypes('number').corr()пуцвцай
+# corr = dataset.select_dtypes('number').corr()пуцвцай
+# plt.figure(figsize=(20, 12))
+# sns.heatmap(corr, cmap='seismic', annot=True, linewidths=.5, fmt='.2f')
 # # plt.show()
 
-# - по результатам анализа произведите предобработку переменных
-print(data.columns)
-# print(np.round(data.isna().sum()[data.isna().sum()>0] / data.shape[0], 2))
-#
-# print(data.dropna().shape[0] / data.shape[0])
-# print(data[['reviews_per_month']].describe())
-# print(data[['number_of_reviews']].describe())
-#
-# number_of_reviews_bins = data.number_of_reviews.quantile([0, 0.1, 0.2, 0.3, 0.4, 0.5, 0.6, 0.7, 0.8, 0.9, 1])
-# print(number_of_reviews_bins)
-# data['number_of_reviews_bins'] = pd.cut(data['number_of_reviews'], number_of_reviews_bins, duplicates='drop',
-#                                    labels=['0-0.3', '0.3-0.4', '0.4-0.5',
-#                                            '0.5-0.6', '0.6-0.7','0.7-0.8', '0.8-0.9','0.9-1'], right=True, include_lowest=True)
-#
-# print(data[['number_of_reviews_bins']].describe())
-# plt.figure(figsize=(15,8))
 
-# sns.histplot(data['number_of_reviews_bins'], kde=True, color='skyblue')
-# plt.show()
-# print(data.reviews_per_month)
-# plt.figure(figsize=(15,8))
-#
-# sns.histplot(data['reviews_per_month'], kde=True, color='skyblue')
-# plt.show()
-# data.reviews_per_month = data.groupby(['number_of_reviews_bins']).reviews_per_month.\
-#     transform(lambda x: x.fillna(x.mean())).round(2)
-# data.reviews_per_month = data.reviews_per_month.isna()
-data.loc[data['reviews_per_month'].isnull(), 'reviews_per_month'] = 0
-# print(data.reviews_per_month)
-# plt.figure(figsize=(15,8))
-#
-# sns.histplot(data['reviews_per_month'], kde=True, color='skyblue')
+# Pair plots
+# sns.pairplot(dataset.select_dtypes('number'))
 # plt.show()
 
+
+from sklearn.datasets import fetch_california_housing
+import pandas as pd
+bunch = fetch_california_housing()
+df = pd.DataFrame(bunch['dataset'], columns=bunch['feature_names'])
+df['price'] = bunch['price']
+print(df.describe())
+#
+# from sklearn.pipeline import Pipeline
+# from sklearn.metrics import r2_score, mean_squared_error
+# from sklearn.tree import DecisionTreeRegressor
+# from sklearn.preprocessing import StandardScaler
+#
+# def rmse(y_hat, y):
+#     return np.sqrt(mean_squared_error(y_hat, y))
+#
+# pipe = Pipeline([('scaler', StandardScaler()), ('dt', DecisionTreeRegressor())])
+# from sklearn.model_selection import train_test_split, cross_val_score
+# X = df.drop('target', axis=1)
+# Y = df['target']
+# X_train, X_test, y_train, y_test = train_test_split(X, Y, random_state=42)
+# The pipeline can be used as any other estimator
+# and avoids leaking the test set into the train set
+# pipe.fit(X_train, y_train)
+# preds = pipe.predict(X_test)
+# print('R2: ', r2_score(y_test, preds))
+# print('RSME: ', rmse(y_test, preds))
+
+
+# print(np.round(dataset.isna().sum()[dataset.isna().sum()>0] / dataset.shape[0], 2))
+# print(dataset.dropna().shape[0] / dataset.shape[0])
+# sns.boxplot(x=dataset['reviews_per_month'].isna(), hue=dataset.number_of_reviews)
+# plt.show()
+# dataset['reviews_per_month'] = dataset['reviews_per_month'].fillna(0)
+
+# print(dataset.dropna().shape[0] / dataset.shape[0])
 
 # Часть 2. Preprocessing & Feature Engineering
-
 # работа с категориальными переменными (можно начать с dummy);
 # from category_encoders import OrdinalEncoder, OneHotEncoder
 # # enc = OneHotEncoder()
@@ -131,17 +104,36 @@ data.loc[data['reviews_per_month'].isnull(), 'reviews_per_month'] = 0
 # # data_enc = data.drop(['room_type'], axis=1).join(enc.fit_transform(data[['room_type']], axis=0))
 # # print(data_enc.head().columns)
 
-data_ = pd.get_dummies(data, columns=['room_type'])
-# print(data.head().values)
-# print(data_.describe().to_csv('descri'))
+# def encode_func(data, enc, cols=['room_type', 'neighbourhood_group']):
+#     data_enc = data.copy()
+#     data_enc[cols] = enc.fit_transform(data_enc[cols])
+#     return data_enc
+#
+
+# enc = OrdinalEncoder()
+# dataset = encode_func(dataset, enc)
+# print(dataset.room_type.unique())
+# print(dataset.neighbourhood_group.unique())
+# print(dataset.columns)
 
 
-# замена аномалий;
-# data = data.drop(data.loc[((data.minimum_nights > 365) | (data.price == 0))].index, axis=0)
-# print(data)
-plt.subplots(figsize=(10,7))
-sns.distplot(data['minimum_nights'], label='minimum_nights_in_year')
-plt.axvline(data.minimum_nights.quantile(0.95), label='95% quantile', c='mediumslateblue')
-plt.axvline(data.minimum_nights.quantile(0.99), label='99% quantile', c='orchid')
-plt.legend()
-# plt.show()
+# # замена аномалий;
+# dataset = dataset.drop(dataset.loc[((dataset.minimum_nights > 365) | (dataset.price == 0))].index, axis=0)
+# len_columns = len(dataset.select_dtypes('number').columns)
+#
+#
+# for i in range(len_columns):
+#     plt.subplots(figsize=(10,7))
+#     sns.distplot(x=dataset[dataset.select_dtypes('number').columns[i]], label=dataset.select_dtypes('number').columns[i])
+#     plt.axvline(dataset[dataset.select_dtypes('number').columns[i]].quantile(0.95), label='95% quantile', c='mediumslateblue')
+#     plt.axvline(dataset[dataset.select_dtypes('number').columns[i]].quantile(0.99), label='99% quantile', c='orchid')
+# plt.legend()
+# # plt.show()
+#
+# dataset = dataset.loc[((dataset.reviews_per_month < dataset.reviews_per_month.quantile(0.99)) &
+#                        (dataset.price < dataset.price.quantile(0.99)) &
+#                        (dataset.minimum_nights < dataset.minimum_nights.quantile(0.99)) &
+#                        (dataset.number_of_reviews < dataset.number_of_reviews.quantile(0.99)) &
+#                        (dataset.calculated_host_listings_count < dataset.calculated_host_listings_count.quantile(0.99)))]
+#
+# # различные варианты шкалирования непрерывных переменных (StandardScaler, RobustScaler, и.т.д.)
